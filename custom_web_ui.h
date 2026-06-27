@@ -1,7 +1,7 @@
 /**
  * Custom Web UI for ESPHome - MINIMAL TEST VERSION
- * No SPIFFS, no download. ECharts loaded from CDN for testing.
- * Goal: verify that handler registration and "/" interception works.
+ * Uses global_web_server_base to avoid Python ID resolution issues.
+ * ECharts loaded from CDN for testing.
  */
 
 #pragma once
@@ -52,8 +52,8 @@ chart.setOption({
 
 class CustomWebUI : public AsyncWebHandler, public Component {
  public:
-  explicit CustomWebUI(web_server_base::WebServerBase *base) : base_(base) {
-    ESP_LOGI(TAG, "Constructor: base=%p", base);
+  CustomWebUI() {
+    ESP_LOGI(TAG, "Constructor called");
   }
 
   bool canHandle(AsyncWebServerRequest *request) const override {
@@ -79,12 +79,14 @@ class CustomWebUI : public AsyncWebHandler, public Component {
 
   void setup() override {
     ESP_LOGI(TAG, "setup() START, priority=%.1f", this->get_setup_priority());
-    if (this->base_ == nullptr) {
-      ESP_LOGE(TAG, "base_ is NULL!");
+    auto *base = esphome::web_server_base::global_web_server_base;
+    ESP_LOGI(TAG, "global_web_server_base=%p", base);
+    if (base == nullptr) {
+      ESP_LOGE(TAG, "global_web_server_base is NULL!");
       return;
     }
-    this->base_->init();
-    this->base_->add_handler_without_auth(this);
+    base->init();
+    base->add_handler_without_auth(this);
     ESP_LOGI(TAG, "setup() DONE");
   }
 
@@ -95,9 +97,6 @@ class CustomWebUI : public AsyncWebHandler, public Component {
   void dump_config() override {
     ESP_LOGCONFIG(TAG, "Custom Web UI (TEST VERSION)");
   }
-
- protected:
-  web_server_base::WebServerBase *base_{nullptr};
 };
 
 }  // namespace custom_web_ui
