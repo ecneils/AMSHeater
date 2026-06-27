@@ -209,7 +209,7 @@ class CustomWebUI : public Component {
     server_->onNotFound([](AsyncWebServerRequest *request) {
       String target = "http://localhost:8080" + request->url();
 
-      ESP_LOGD(TAG, "Proxy: %s %s → %s", request->methodToString(), request->url().c_str(), target.c_str());
+      ESP_LOGD(TAG, "Proxy: %s %s -> %s", request->methodToString(), request->url().c_str(), target.c_str());
 
       WiFiClient client;
       HTTPClient http;
@@ -244,7 +244,7 @@ class CustomWebUI : public Component {
     });
 
     server_->begin();
-    ESP_LOGI(TAG, "Custom Web UI ready → http://<IP>:%d/", this->port_);
+    ESP_LOGI(TAG, "Custom Web UI ready -> http://<IP>:%d/", this->port_);
   }
 
   void set_port(uint16_t port) { this->port_ = port; }
@@ -264,15 +264,8 @@ class CustomWebUI : public Component {
   void ensure_echarts_() {
     if (!SPIFFS.begin(true)) {
       ESP_LOGE(TAG, "SPIFFS mount failed! Check partition table.");
-      ESP_LOGE(TAG, "Make sure partitions.csv is used and includes a 'spiffs' partition.");
+      ESP_LOGE(TAG, "Make sure partitions.csv is used and includes a spiffs partition.");
       return;
-    }
-
-    // Log SPIFFS info
-    {
-      FSInfo fs_info;
-      SPIFFS.info(fs_info);
-      ESP_LOGI(TAG, "SPIFFS: total %d KB, used %d KB", fs_info.totalBytes / 1024, fs_info.usedBytes / 1024);
     }
 
     if (SPIFFS.exists("/echarts.min.js")) {
@@ -284,7 +277,7 @@ class CustomWebUI : public Component {
       }
     }
 
-    // Not found — download from CDN
+    // Not found - download from CDN
     ESP_LOGI(TAG, "echarts.min.js not in SPIFFS, downloading from CDN...");
     ESP_LOGI(TAG, "URL: %s", ECHARTS_CDN_URL);
     this->download_echarts_();
@@ -292,7 +285,7 @@ class CustomWebUI : public Component {
 
   // -------------------------------------------------------
   // Download echarts.min.js from CDN to SPIFFS (chunked)
-  // Uses 256-byte read chunks to minimize RAM usage (~400KB on C3)
+  // Uses 256-byte read chunks to minimize RAM usage
   // -------------------------------------------------------
   void download_echarts_() {
     WiFiClient client;

@@ -1,12 +1,15 @@
 """Custom Web UI component for ESPHome.
 
 Serves a custom HTML dashboard directly at the ESP32's root URL.
-The HTML is embedded in flash memory. API calls are transparently
+The HTML is embedded in flash memory (PROGMEM). API calls are transparently
 proxied to the ESPHome web_server running on port 8080.
+ECharts library is served from SPIFFS (auto-downloaded from CDN on first boot).
 
 Usage (in YAML):
   external_components:
-    - source: custom_components
+    - source:
+        type: local
+        path: custom_components
       components: [custom_web_ui]
 
   custom_web_ui:
@@ -14,7 +17,6 @@ Usage (in YAML):
 
   web_server:
     port: 8080
-    cors: "*"
 """
 
 import esphome.codegen as cg
@@ -40,5 +42,9 @@ CONFIG_SCHEMA = cv.Schema(
 async def to_code(config):
     """Generate C++ code for the custom web UI component."""
     var = cg.new_Pvariable(config[CONF_ID])
+    # ESPAsyncWebServer and AsyncTCP are needed by our C++ code
+    # but not pulled in by web_server (which uses ESP-IDF native HTTP)
+    cg.add_library("https://github.com/me-no-dev/ESPAsyncWebServer.git")
+    cg.add_library("https://github.com/me-no-dev/AsyncTCP.git")
     cg.add(var.set_port(config[CONF_PORT]))
     await cg.register_component(var, config)
