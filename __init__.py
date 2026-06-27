@@ -18,7 +18,9 @@ DEPENDENCIES = ["web_server"]
 custom_web_ui_ns = cg.esphome_ns.namespace("custom_web_ui")
 CustomWebUI = custom_web_ui_ns.class_("CustomWebUI", cg.Component)
 
-CONFIG_SCHEMA = cv.Schema({}).extend(cv.COMPONENT_SCHEMA)
+CONFIG_SCHEMA = cv.Schema({
+    cv.GenerateID(): cv.declare_id(CustomWebUI),
+}).extend(cv.COMPONENT_SCHEMA)
 
 async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
