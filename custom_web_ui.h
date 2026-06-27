@@ -286,9 +286,6 @@ class CustomWebUI : public AsyncWebHandler, public Component {
         .timeout_ms = 15000,
         .buffer_size = 1024,
         .buffer_size_tx = 512,
-        .cert_pem = nullptr,
-        .skip_cert_verify = false,
-        .max_redirections = 5,
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
