@@ -1,7 +1,61 @@
-/* 测试用：把页面背景改成淡蓝色，标题改成红色 */
-body {
-  background-color: #e3f2fd !important;
-}
-h1, h2, h3 {
-  color: #d32f2f !important;
-}
+/* ===== uPlot 图表基础样式 ===== */
+.uplot{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;position:relative;display:inline-block}
+.u-title{font-weight:700}
+.u-legend{display:flex;flex-wrap:wrap;justify-content:center}
+.u-legend.inline{position:absolute;top:0;right:0;display:block;text-align:right}
+.u-legend th{font-weight:600}
+.u-legend th,.u-legend td{padding:1px 4px}
+.u-legend tr>*:first-child{text-align:left}
+.u-legend tr>*:last-child{text-align:right}
+.u-legend .u-marker{display:inline-block;width:1em;height:1em;vertical-align:middle;margin-right:.4em;border-radius:2px}
+.u-select{background:rgba(0,0,0,.07);position:absolute;pointer-events:none}
+.u-cursor-x,.u-cursor-y{position:absolute;pointer-events:none;z-index:100}
+.u-cursor-x{top:0;height:100%;border-right:1px dashed #666}
+.u-cursor-y{left:0;width:100%;border-bottom:1px dashed #666}
+.u-h-tooltip,.u-v-tooltip{position:absolute;pointer-events:none;background:rgba(255,255,255,.95);padding:6px;border-radius:3px;border:1px solid #ddd;box-shadow:2px 2px 4px rgba(0,0,0,.15);z-index:100}
+.u-h-tooltip{top:0}
+.u-v-tooltip{left:0}
+.u-tooltip th{font-weight:600;text-align:left}
+.u-tooltip td{text-align:right}
+.u-tooltip .u-marker{display:inline-block;width:1em;height:1em;vertical-align:middle;margin-right:.4em}
+.u-over{position:absolute;top:0;left:0;cursor:crosshair}
+
+/* ===== 页面全局重置 ===== */
+*{margin:0;padding:0;box-sizing:border-box;font-family:"Microsoft YaHei",system-ui,sans-serif}
+body{background:#f0f2f5;padding:20px;color:#333}
+h1{text-align:center;font-weight:500;font-size:26px;margin-bottom:20px;color:#333}
+.grid{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.card{background:#fff;border-radius:8px;padding:18px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.card h3{font-weight:500;font-size:18px;margin-bottom:14px;color:#333}
+
+/* ===== 状态卡片 ===== */
+.status-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.status-item{padding:12px;border-radius:6px;color:#fff;text-align:center}
+.status-item .label{font-size:13px;opacity:.95;margin-bottom:5px}
+.status-item .value{font-size:24px;font-weight:bold}
+
+.bg-temp{background:#28a745}
+.bg-hum{background:#007bff}
+.bg-fan{background:#17a2b8}
+.bg-power{background:#ffc107;color:#333}
+.bg-time{background:#6c757d}
+
+/* ===== 控制面板 ===== */
+.control-row{display:flex;gap:10px;margin-bottom:16px}
+.control-item{flex:1}
+.control-item .label{display:block;font-size:13px;color:#fff;text-align:center;padding:7px 0;border-radius:6px 6px 0 0}
+.control-item input{width:100%;padding:9px;font-size:16px;text-align:center;border:1px solid #ddd;border-top:none;border-radius:0 0 6px 6px;outline:none}
+.control-item input:focus{border-color:#aaa}
+
+.label-temp{background:#ec407a}
+.label-duration{background:#42a5f5}
+.label-refresh{background:#ab47bc}
+
+.btn-group{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+.btn{padding:9px 20px;border:none;border-radius:4px;color:#fff;font-size:14px;cursor:pointer;transition:opacity .2s}
+.btn:hover{opacity:.9}
+.btn-start{background:#1976d2}
+.btn-stop{background:#d32f2f}
+
+/* ===== 图表容器 ===== */
+.chart-wrap{width:100%;height:280px}
