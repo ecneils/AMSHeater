@@ -1,22 +1,19 @@
 /**
  * Custom Web UI for ESPHome
  *
- * Hooks into the existing web_server component (web_server_base) to serve
- * a custom HTML dashboard at the root URL (/). ECharts is served from SPIFFS
- * (auto-downloaded from CDN on first boot).
+ * Follows the official prometheus component pattern to hook into web_server_base.
+ * Serves a custom HTML dashboard at GET / and echarts.min.js at GET /echarts.min.js.
+ * All other requests pass through to web_server normally.
  *
- * Architecture:
- *   - Custom component registers AsyncWebHandler with existing web_server
- *   - Serves embedded HTML at GET /
- *   - Serves echarts.min.js from SPIFFS at GET /echarts.min.js
- *   - All other requests handled normally by web_server (sensor/switch/climate API)
- *   - Single port (80), no proxy needed
+ * Pattern: Same as esphome/components/prometheus/prometheus_handler.h
+ *   - Inherits both AsyncWebHandler and Component
+ *   - Constructor receives web_server_base::WebServerBase*
+ *   - setup() calls base_->init() then base_->add_handler(this)
  *
- * Dependencies:
- *   - web_server component (built-in, uses ESP-IDF http_server on ESP32)
- *   - SPIFFS partition (defined in partitions.csv)
- *   - NO external Arduino libraries needed
+ * Dependencies: web_server (built-in), SPIFFS partition, NO external Arduino libs
  */
+
+#pragma once
 
 #include "esphome/core/component.h"
 #include "esphome/core/log.h"
@@ -24,21 +21,15 @@
 
 #include <esp_spiffs.h>
 #include <esp_http_client.h>
-#include <esp_ota_ops.h>
 
 namespace esphome {
 namespace custom_web_ui {
 
 static const char *TAG = "custom_web_ui";
 
-// CDN URL for ECharts (used for first-boot download only)
 static const char *ECHARTS_CDN_URL =
     "https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js";
 
-// ============================================================
-// Embedded HTML page (stored in flash via PROGMEM)
-// ECharts loaded from /echarts.min.js (served from SPIFFS)
-// ============================================================
 static const char PROGMEM INDEX_HTML[] = R"rawliteral(<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -154,25 +145,34 @@ if(hd){window.hc=echarts.init(hd,null,{renderer:'svg'});hc.setOption({tooltip:{t
 </body>
 </html>)rawliteral";
 
-// ============================================================
-// Custom HTTP Handler - serves our dashboard HTML and ECharts
-// Inherits from AsyncWebHandler to hook into web_server
-// ============================================================
-class CustomWebUIHandler : public AsyncWebHandler {
+class CustomWebUI : public AsyncWebHandler, public Component {
  public:
+  explicit CustomWebUI(web_server_base::WebServerBase *base) : base_(base) {}
+
+  // --- AsyncWebHandler interface ---
   bool canHandle(AsyncWebServerRequest *request) const override {
-    char buf[AsyncWebServerRequest::URL_BUF_SIZE];
-    std::string url = request->url_to(buf).to_string();
-    // Intercept root URL and echarts.min.js
+    if (request->method() != HTTP_GET)
+      return false;
+#ifdef USE_ESP32
+    char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
+    auto url = request->url_to(url_buf);
     return url == "/" || url == "/index.html" || url == "/echarts.min.js";
+#else
+    return request->url() == ESPHOME_F("/") ||
+           request->url() == ESPHOME_F("/index.html") ||
+           request->url() == ESPHOME_F("/echarts.min.js");
+#endif
   }
 
   void handleRequest(AsyncWebServerRequest *request) override {
-    char buf[AsyncWebServerRequest::URL_BUF_SIZE];
-    std::string url = request->url_to(buf).to_string();
+#ifdef USE_ESP32
+    char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
+    auto url = request->url_to(url_buf);
+#else
+    auto url = request->url();
+#endif
 
     if (url == "/" || url == "/index.html") {
-      // Serve embedded HTML dashboard
       ESP_LOGD(TAG, "Serving dashboard HTML");
       size_t len = strlen_P(INDEX_HTML);
       auto *resp = request->beginResponse(200, "text/html; charset=utf-8",
@@ -182,16 +182,34 @@ class CustomWebUIHandler : public AsyncWebHandler {
     }
 
     if (url == "/echarts.min.js") {
-      // Serve ECharts from SPIFFS
       this->serve_echarts_(request);
       return;
     }
   }
 
+  // --- Component interface ---
+  void setup() override {
+    this->init_spiffs_();
+    this->base_->init();
+    this->base_->add_handler_without_auth(this);
+    ESP_LOGI(TAG, "Custom Web UI registered");
+  }
+
+  float get_setup_priority() const override {
+    return setup_priority::WIFI - 1.0f;
+  }
+
+  void dump_config() override {
+    ESP_LOGCONFIG(TAG, "Custom Web UI:");
+    ESP_LOGCONFIG(TAG, "  SPIFFS: %s", this->spiffs_mounted_ ? "mounted" : "FAILED");
+  }
+
  protected:
-  // Serve echarts.min.js from SPIFFS
+  web_server_base::WebServerBase *base_;
+  bool spiffs_mounted_{false};
+
+  // --- Serve echarts.min.js from SPIFFS ---
   void serve_echarts_(AsyncWebServerRequest *request) {
-    // Check if file exists using VFS
     FILE *f = fopen("/spiffs/echarts.min.js", "rb");
     if (!f) {
       ESP_LOGW(TAG, "echarts.min.js not found in SPIFFS");
@@ -200,14 +218,12 @@ class CustomWebUIHandler : public AsyncWebHandler {
       return;
     }
 
-    // Get file size
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
 
     ESP_LOGD(TAG, "Serving echarts.min.js from SPIFFS (%ld bytes)", size);
 
-    // Read file into buffer
     std::vector<uint8_t> data(size);
     size_t read_bytes = fread(data.data(), 1, size, f);
     fclose(f);
@@ -222,72 +238,22 @@ class CustomWebUIHandler : public AsyncWebHandler {
                                           data.data(), data.size());
     request->send(resp);
   }
-};
 
-// ============================================================
-// CustomWebUI Component
-// Manages SPIFFS init and ECharts download
-// ============================================================
-class CustomWebUI : public Component {
- public:
-  void setup() override {
-    ESP_LOGI(TAG, "Initializing Custom Web UI...");
-
-    // 1. Mount SPIFFS and ensure echarts.min.js exists
-    this->init_spiffs_();
-
-    // 2. Register our handler with the existing web_server
-    if (this->web_server_base_ == nullptr) {
-      ESP_LOGE(TAG, "web_server_base is null! Check YAML configuration.");
-      return;
-    }
-
-    // Create handler and register it (before auth, so root page is accessible)
-    this->handler_ = new CustomWebUIHandler();
-    this->web_server_base_->add_handler_without_auth(this->handler_);
-
-    ESP_LOGI(TAG, "Custom Web UI registered with web_server");
-  }
-
-  void set_web_server(web_server_base::WebServerBase *web_server) {
-    this->web_server_base_ = web_server;
-  }
-
-  float get_setup_priority() const override {
-    // Must run AFTER web_server has been initialized
-    return setup_priority::AFTER_WIFI + 10.0f;
-  }
-
-  void dump_config() override {
-    ESP_LOGCONFIG(TAG, "Custom Web UI:");
-    ESP_LOGCONFIG(TAG, "  SPIFFS: %s", this->spiffs_mounted_ ? "mounted" : "FAILED");
-  }
-
- protected:
-  web_server_base::WebServerBase *web_server_base_{nullptr};
-  CustomWebUIHandler *handler_{nullptr};
-  bool spiffs_mounted_{false};
-
-  // ============================================================
-  // Mount SPIFFS and download ECharts if needed
-  // Uses ESP-IDF native SPIFFS API (not Arduino SPIFFS.h)
-  // ============================================================
+  // --- Mount SPIFFS (ESP-IDF native API) ---
   void init_spiffs_() {
     esp_vfs_spiffs_conf_t conf = {
         .base_path = "/spiffs",
-        .partition_label = NULL,       // Use default "spiffs" partition
-        .max_files = 1,                // We only need echarts.min.js
-        .format_if_mount_failed = true  // Auto-format on first use
+        .partition_label = nullptr,
+        .max_files = 1,
+        .format_if_mount_failed = true,
     };
 
     esp_err_t ret = esp_vfs_spiffs_register(&conf);
-
     if (ret != ESP_OK) {
       if (ret == ESP_FAIL) {
         ESP_LOGE(TAG, "SPIFFS: Failed to mount or format filesystem");
       } else if (ret == ESP_ERR_NOT_FOUND) {
         ESP_LOGE(TAG, "SPIFFS: No SPIFFS partition found in partition table");
-        ESP_LOGE(TAG, "SPIFFS: Make sure partitions.csv includes a 'spiffs' partition");
       } else {
         ESP_LOGE(TAG, "SPIFFS: Failed to initialize (%s)", esp_err_to_name(ret));
       }
@@ -296,28 +262,21 @@ class CustomWebUI : public Component {
 
     this->spiffs_mounted_ = true;
 
-    // Print SPIFFS info
     size_t total = 0, used = 0;
-    esp_spiffs_info(NULL, &total, &used);
-    ESP_LOGI(TAG, "SPIFFS: mounted. Total: %d bytes, Used: %d bytes, Free: %d bytes",
-             total, used, total - used);
+    esp_spiffs_info(nullptr, &total, &used);
+    ESP_LOGI(TAG, "SPIFFS: mounted. Total: %d bytes, Used: %d bytes", total, used);
 
-    // Check if echarts.min.js exists
     struct stat st;
     if (stat("/spiffs/echarts.min.js", &st) == 0 && st.st_size > 0) {
       ESP_LOGI(TAG, "SPIFFS: echarts.min.js found (%ld bytes)", (long)st.st_size);
       return;
     }
 
-    // Not found - download from CDN
     ESP_LOGI(TAG, "SPIFFS: echarts.min.js not found, downloading from CDN...");
     this->download_echarts_();
   }
 
-  // ============================================================
-  // Download echarts.min.js from CDN to SPIFFS
-  // Uses ESP-IDF native HTTP client API
-  // ============================================================
+  // --- Download echarts.min.js from CDN (ESP-IDF native HTTP client) ---
   void download_echarts_() {
     ESP_LOGI(TAG, "Downloading echarts.min.js from: %s", ECHARTS_CDN_URL);
 
@@ -327,7 +286,7 @@ class CustomWebUI : public Component {
         .timeout_ms = 15000,
         .buffer_size = 1024,
         .buffer_size_tx = 512,
-        .cert_pem = nullptr,       // HTTPS with default CA bundle
+        .cert_pem = nullptr,
         .skip_cert_verify = false,
         .max_redirections = 5,
     };
@@ -338,7 +297,6 @@ class CustomWebUI : public Component {
       return;
     }
 
-    // Open file for writing
     FILE *f = fopen("/spiffs/echarts.min.js", "wb");
     if (!f) {
       ESP_LOGE(TAG, "Failed to create echarts.min.js in SPIFFS");
@@ -354,9 +312,7 @@ class CustomWebUI : public Component {
       return;
     }
 
-    int content_len = esp_http_client_fetch_headers(client);
     int status_code = esp_http_client_get_status_code(client);
-
     if (status_code != 200) {
       ESP_LOGE(TAG, "HTTP download failed: status %d", status_code);
       fclose(f);
@@ -366,9 +322,9 @@ class CustomWebUI : public Component {
       return;
     }
 
-    ESP_LOGI(TAG, "Downloading echarts.min.js (%d bytes expected)...", content_len);
+    int content_len = esp_http_client_fetch_headers(client);
+    ESP_LOGI(TAG, "Downloading echarts.min.js (%d bytes)...", content_len);
 
-    // Read in chunks and write to file
     uint8_t buf[512];
     int total_written = 0;
     int bytes_read;
@@ -381,7 +337,6 @@ class CustomWebUI : public Component {
         break;
       }
       total_written += bytes_read;
-      esp_http_client_perform(client);  // Keep connection alive
     }
 
     unsigned long elapsed = millis() - t0;
