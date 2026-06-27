@@ -18,6 +18,7 @@ Pattern follows the official prometheus component approach.
 
 import esphome.codegen as cg
 import esphome.config_validation as cv
+from esphome.const import CONF_ID
 from esphome.components import web_server_base
 from esphome.components.web_server_base import CONF_WEB_SERVER_BASE_ID
 
