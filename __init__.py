@@ -2,7 +2,7 @@
 
 Hooks into the existing web_server_base to serve a custom HTML dashboard
 at the root URL. ECharts is served from SPIFFS (auto-downloaded from CDN
-on first boot). No external library dependencies needed.
+on first boot).
 
 Usage (in YAML):
   web_server:
@@ -11,7 +11,8 @@ Usage (in YAML):
       username: admin
       password: !secret web_password
 
-  custom_web_ui: {}
+  custom_web_ui:
+    web_server_base_id: web_server_base0
 
 Pattern follows the official prometheus component approach.
 """

@@ -5,11 +5,6 @@
  * Serves a custom HTML dashboard at GET / and echarts.min.js at GET /echarts.min.js.
  * All other requests pass through to web_server normally.
  *
- * Pattern: Same as esphome/components/prometheus/prometheus_handler.h
- *   - Inherits both AsyncWebHandler and Component
- *   - Constructor receives web_server_base::WebServerBase*
- *   - setup() calls base_->init() then base_->add_handler(this)
- *
  * Dependencies: web_server (built-in), SPIFFS partition, NO external Arduino libs
  */
 
@@ -147,20 +142,25 @@ if(hd){window.hc=echarts.init(hd,null,{renderer:'svg'});hc.setOption({tooltip:{t
 
 class CustomWebUI : public AsyncWebHandler, public Component {
  public:
-  explicit CustomWebUI(web_server_base::WebServerBase *base) : base_(base) {}
+  explicit CustomWebUI(web_server_base::WebServerBase *base) : base_(base) {
+    ESP_LOGI(TAG, "CustomWebUI constructor called, base=%p", base);
+  }
 
   // --- AsyncWebHandler interface ---
   bool canHandle(AsyncWebServerRequest *request) const override {
-    if (request->method() != HTTP_GET)
+    if (request->method() != HTTP_GET) {
       return false;
+    }
 #ifdef USE_ESP32
     char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
     auto url = request->url_to(url_buf);
-    return url == "/" || url == "/index.html" || url == "/echarts.min.js";
+    bool match = (url == "/") || (url == "/index.html") || (url == "/echarts.min.js");
+    ESP_LOGD(TAG, "canHandle: url='%s' match=%s", url.to_string().c_str(), match ? "YES" : "NO");
+    return match;
 #else
-    return request->url() == ESPHOME_F("/") ||
-           request->url() == ESPHOME_F("/index.html") ||
-           request->url() == ESPHOME_F("/echarts.min.js");
+    auto url = request->url();
+    bool match = (url == ESPHOME_F("/")) || (url == ESPHOME_F("/index.html")) || (url == ESPHOME_F("/echarts.min.js"));
+    return match;
 #endif
   }
 
@@ -171,9 +171,10 @@ class CustomWebUI : public AsyncWebHandler, public Component {
 #else
     auto url = request->url();
 #endif
+    ESP_LOGI(TAG, "handleRequest: url='%s'", url.to_string().c_str());
 
     if (url == "/" || url == "/index.html") {
-      ESP_LOGD(TAG, "Serving dashboard HTML");
+      ESP_LOGI(TAG, "Serving dashboard HTML (%d bytes)", (int)strlen_P(INDEX_HTML));
       size_t len = strlen_P(INDEX_HTML);
       auto *resp = request->beginResponse(200, "text/html; charset=utf-8",
                                             (const uint8_t *)INDEX_HTML, len);
@@ -189,14 +190,29 @@ class CustomWebUI : public AsyncWebHandler, public Component {
 
   // --- Component interface ---
   void setup() override {
+    ESP_LOGI(TAG, "CustomWebUI setup() START, priority=%.1f", this->get_setup_priority());
+    ESP_LOGI(TAG, "CustomWebUI base_=%p", this->base_);
+
+    // 1. Mount SPIFFS and ensure echarts.min.js exists
     this->init_spiffs_();
+
+    // 2. Register our handler with the existing web_server
+    if (this->base_ == nullptr) {
+      ESP_LOGE(TAG, "base_ is null! Cannot register handler.");
+      return;
+    }
+
+    // 3. Initialize base server and register handler
+    ESP_LOGI(TAG, "Calling base_->init()...");
     this->base_->init();
+    ESP_LOGI(TAG, "Calling base_->add_handler_without_auth()...");
     this->base_->add_handler_without_auth(this);
-    ESP_LOGI(TAG, "Custom Web UI registered");
+
+    ESP_LOGI(TAG, "CustomWebUI setup() DONE - handler registered");
   }
 
   float get_setup_priority() const override {
-    // Must be numerically smaller than web_server's priority (WIFI - 1.0f)
+    // Must be numerically smaller than web_server's priority (WIFI - 1.0f = 199)
     // so that our setup() runs first and our handler is registered before
     // web_server's handler. stable_sort keeps registration order for equal
     // priorities, and web_server's to_code priority is higher, so we must
@@ -207,10 +223,11 @@ class CustomWebUI : public AsyncWebHandler, public Component {
   void dump_config() override {
     ESP_LOGCONFIG(TAG, "Custom Web UI:");
     ESP_LOGCONFIG(TAG, "  SPIFFS: %s", this->spiffs_mounted_ ? "mounted" : "FAILED");
+    ESP_LOGCONFIG(TAG, "  base_: %p", this->base_);
   }
 
  protected:
-  web_server_base::WebServerBase *base_;
+  web_server_base::WebServerBase *base_{nullptr};
   bool spiffs_mounted_{false};
 
   // --- Serve echarts.min.js from SPIFFS ---
@@ -246,6 +263,8 @@ class CustomWebUI : public AsyncWebHandler, public Component {
 
   // --- Mount SPIFFS (ESP-IDF native API) ---
   void init_spiffs_() {
+    ESP_LOGI(TAG, "init_spiffs_() START");
+
     esp_vfs_spiffs_conf_t conf = {
         .base_path = "/spiffs",
         .partition_label = nullptr,
@@ -254,11 +273,13 @@ class CustomWebUI : public AsyncWebHandler, public Component {
     };
 
     esp_err_t ret = esp_vfs_spiffs_register(&conf);
+
     if (ret != ESP_OK) {
       if (ret == ESP_FAIL) {
         ESP_LOGE(TAG, "SPIFFS: Failed to mount or format filesystem");
       } else if (ret == ESP_ERR_NOT_FOUND) {
         ESP_LOGE(TAG, "SPIFFS: No SPIFFS partition found in partition table");
+        ESP_LOGE(TAG, "SPIFFS: Make sure partitions.csv includes a 'spiffs' partition");
       } else {
         ESP_LOGE(TAG, "SPIFFS: Failed to initialize (%s)", esp_err_to_name(ret));
       }
@@ -269,7 +290,7 @@ class CustomWebUI : public AsyncWebHandler, public Component {
 
     size_t total = 0, used = 0;
     esp_spiffs_info(nullptr, &total, &used);
-    ESP_LOGI(TAG, "SPIFFS: mounted. Total: %d bytes, Used: %d bytes", total, used);
+    ESP_LOGI(TAG, "SPIFFS: mounted. Total=%d, Used=%d, Free=%d", total, used, total - used);
 
     struct stat st;
     if (stat("/spiffs/echarts.min.js", &st) == 0 && st.st_size > 0) {
