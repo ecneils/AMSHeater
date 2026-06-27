@@ -1,11 +1,7 @@
 /**
- * Custom Web UI for ESPHome
- *
- * Follows the official prometheus component pattern to hook into web_server_base.
- * Serves a custom HTML dashboard at GET / and echarts.min.js at GET /echarts.min.js.
- * All other requests pass through to web_server normally.
- *
- * Dependencies: web_server (built-in), SPIFFS partition, NO external Arduino libs
+ * Custom Web UI for ESPHome - MINIMAL TEST VERSION
+ * No SPIFFS, no download. ECharts loaded from CDN for testing.
+ * Goal: verify that handler registration and "/" interception works.
  */
 
 #pragma once
@@ -14,127 +10,41 @@
 #include "esphome/core/log.h"
 #include "esphome/components/web_server_base/web_server_base.h"
 
-#include <esp_spiffs.h>
-#include <esp_http_client.h>
-
 namespace esphome {
 namespace custom_web_ui {
 
 static const char *TAG = "custom_web_ui";
 
-static const char *ECHARTS_CDN_URL =
-    "https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js";
-
 static const char PROGMEM INDEX_HTML[] = R"rawliteral(<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>AMS烘干机</title>
-<script src="/echarts.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AMS烘干机 - TEST</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"></script>
 <style>
-*{box-sizing:border-box;margin:0;padding:0}:root{--bg:#f0f2f5;--card:#fff;--hd:#fff;--inp:#f5f7fa;--ink:#1a1a2e;--muted:#8e90a6;--rule:#e4e6ef;--shadow:0 2px 8px rgba(0,0,0,.08);--r:12px;--rs:8px;--s:6px;--ct:#22c55e;--ctb:#f0fdf4;--ch:#3b82f6;--chb:#eff6ff;--cf:#06b6d4;--cfb:#ecfeff;--cp:#eab308;--cpb:#fefce8;--ctm:#78716c;--ctb:#f5f5f4;--bgo:#3b82f6;--bgh:#2563eb;--bst:#ef4444;--bsh:#dc2626;--bem:#f59e0b;--font:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif}
-body{font-family:var(--font);color:var(--ink);background:var(--bg);line-height:1.5;min-height:100vh}
-.d{max-width:1200px;margin:0 auto;padding:16px}
-.hdr{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--hd);border-radius:var(--r);margin-bottom:16px;box-shadow:var(--shadow);flex-wrap:wrap;gap:8px}
-.hl{display:flex;align-items:center;gap:10px}
-.hi{width:32px;height:32px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:700}
-.ht{font-size:16px;font-weight:700}.ht small{font-size:11px;font-weight:400;color:var(--muted);margin-left:6px}
-.hr{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.st{font-size:11px;padding:3px 10px;border-radius:20px;font-weight:500;display:flex;align-items:center;gap:4px}
-.st .d{width:7px;height:7px;border-radius:50%}
-.st.ok{background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0}.st.ok .d{background:#22c55e}
-.st.er{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}.st.er .d{background:#ef4444}
-.st.bz{background:#fefce8;color:#a16207;border:1px solid #fde68a}.st.bz .d{background:#eab308}
-.up{font-size:11px;color:var(--muted)}
-.btn{padding:5px 12px;border:none;border-radius:6px;font-size:11px;font-weight:600;font-family:var(--font);cursor:pointer;transition:all .2s}
-.btn:active{transform:scale(.97)}
-.bo{background:0 0;color:#555770;border:1px solid var(--rule)}.bo:hover{background:var(--inp)}
-.c{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow)}
-.ch{font-size:13px;font-weight:700;padding:14px 18px 10px;border-bottom:1px solid var(--rule)}
-.cb{padding:14px 18px 18px}
-.mg{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
-.sg{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-.sb{border-radius:var(--rs);padding:12px 14px;text-align:center;transition:transform .15s}
-.sb:hover{transform:translateY(-1px)}
-.sb .l{font-size:10px;font-weight:500;margin-bottom:5px;opacity:.85}
-.sb .v{font-size:24px;font-weight:800;line-height:1.1}.sb .u{font-size:12px;font-weight:400;opacity:.7;margin-left:2px}
-.sb.tp{background:var(--ctb);color:var(--ct)}.sb.hu{background:var(--chb);color:var(--ch)}
-.sb.fn{background:var(--cfb);color:var(--cf)}.sb.pw{background:var(--cpb);color:var(--cp)}
-.sb.tm{background:#f5f5f4;color:#78716c}
-.gg{display:grid;gap:10px}
-.gr{display:flex;gap:8px}.gr .c{flex:1}
-.ctl{font-size:10px;font-weight:600;color:#555770;display:flex;align-items:center;gap:3px;margin-bottom:4px}
-.c input,.c select{width:100%;padding:7px 10px;background:var(--inp);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:12px;font-family:var(--font);outline:none}
-.c input:focus,.c select:focus{border-color:var(--bgo)}
-.cti input{border-left:3px solid #f472b6}.cdi input{border-left:3px solid #38bdf8}.cri select{border-left:3px solid #a78bfa}
-.hn{font-size:9px;color:var(--muted);margin-top:3px}
-.ac{display:flex;gap:8px;margin-top:2px}.ac .btn{flex:1;padding:8px 14px;font-size:12px;font-weight:700;border-radius:6px}
-.g{background:var(--bgo);color:#fff}.g:hover{background:var(--bgh)}
-.s{background:var(--bst);color:#fff}.s:hover{background:var(--bsh)}
-.db{margin-top:10px;padding-top:10px;border-top:1px dashed var(--rule)}
-.dt{font-size:10px;color:var(--muted);cursor:pointer;background:0 0;border:none;font-family:var(--font)}.dt:hover{color:#555770}
-.dg{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-.dbb{padding:4px 10px;border:1px solid var(--rule);border-radius:6px;background:var(--inp);color:#555770;font-size:10px;cursor:pointer;font-family:var(--font)}
-.dbb:hover{background:var(--card);border-color:var(--muted)}
-.cg{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.cx{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:14px}
-.cx .cxh{font-size:12px;font-weight:600;color:#555770;margin-bottom:8px;display:flex;align-items:center;gap:6px}
-.cx .cxh .dd{width:7px;height:7px;border-radius:50%}
-.cx .cxb{width:100%;height:220px}
-#ts{position:fixed;top:16px;right:16px;z-index:9;display:flex;flex-direction:column;gap:6px}
-.ti{padding:8px 16px;border-radius:8px;font-size:12px;font-weight:500;box-shadow:0 4px 16px rgba(0,0,0,.15);animation:ta .3s;max-width:320px;color:#fff}
-.ti.g{background:#22c55e}.ti.r{background:#ef4444}.ti.b{background:#3b82f6}.ti.y{background:#f59e0b}
-@keyframes ta{from{transform:translateX(40px)}to{transform:translateX(0)}}
-@media(max-width:900px){.mg,.cg{grid-template-columns:1fr}}
-@media(max-width:640px){.d{padding:10px}.sg{grid-template-columns:1fr 1fr}.gr{flex-direction:column}.ac{flex-direction:column}.hdr{flex-direction:column;align-items:flex-start}.sb .v{font-size:20px}}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;color:#1a1a2e;background:#f0f2f5;padding:20px}
+.card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.08);max-width:800px;margin:0 auto}
+h1{margin:0 0 10px;font-size:20px}
+p{color:#555;margin:0}
+#chart{width:100%;height:300px;margin-top:20px}
 </style>
 </head>
-<body><div class="d">
-<div class="hdr"><div class="hl"><div class="hi">H</div><div class="ht">AMS烘干机 <small>三绿AMS Heater</small></div></div><div class="hr"><span id="cs" class="st ok"><span class="d"></span><span id="ct">已连接</span></span><span class="up">更新: <strong id="lu">--:--:--</strong></span><button id="rf" class="btn bo">&#x27F3; 刷新</button></div></div>
-<div class="mg">
-<div class="c"><div class="ch">&#x1F4CA; 实时状态</div><div class="cb"><div class="sg"><div class="sb tp"><div class="l">&#x1F321; 温度</div><div class="v" id="st">--.-<span class="u">&#xB0;C</span></div></div><div class="sb hu"><div class="l">&#x1F4A7; 湿度</div><div class="v" id="sh">--.-<span class="u">%</span></div></div><div class="sb fn"><div class="l">&#x1F300; 风扇1</div><div class="v" id="sf1">--</div></div><div class="sb fn"><div class="l">&#x1F300; 风扇2</div><div class="v" id="sf2">--</div></div><div class="sb pw"><div class="l">&#x26A1; 功率</div><div class="v" id="sp">--<span class="u">%</span></div></div><div class="sb tm"><div class="l">&#x23F1; 剩余</div><div class="v" id="sr">--:--:--</div></div></div></div></div>
-<div class="c"><div class="ch">&#x1F39B; 控制</div><div class="cb"><div class="gg"><div class="c"><div class="ctl">耗材类型</div><select id="cf"><option value="PLA">PLA&#x2014;50&#xB0;C</option><option value="PETG">PETG&#x2014;65&#xB0;C</option><option value="ABS">ABS&#x2014;80&#xB0;C</option><option value="TPU">TPU&#x2014;50&#xB0;C</option><option value="Nylon">Nylon&#x2014;80&#xB0;C</option></select></div><div class="gr"><div class="c cti"><div class="ctl">目标温度</div><input type="number" id="ct" value="50" min="0" max="120" step="1"><div class="hn">30&#x2013;85&#xB0;C</div></div><div class="c cdi"><div class="ctl">时长(时)</div><input type="number" id="cd" value="2" min="0.5" max="24" step="0.5"><div class="hn">0=不限</div></div><div class="c cri"><div class="ctl">刷新</div><select id="cr"><option value="1000">1s</option><option value="2000">2s</option><option value="3000">3s</option><option value="5000" selected>5s</option><option value="10000">10s</option></select></div></div><div class="ac"><button id="bg" class="g">&#x25B6; 启动</button><button id="bs" class="s">&#x25A0; 停止</button></div><button id="be" class="btn" style="background:#f59e0b;color:#fff;padding:6px;font-size:11px">&#x26A0; 紧急停止</button><div class="db"><button class="dt" id="dtg">&#x25BC; 高级</button><div class="dg" id="dgc" style="display:none"><button class="dbb" data-a="f1o">风扇1 开</button><button class="dbb" data-a="f1c">风扇1 关</button><button class="dbb" data-a="f2o">风扇2 开</button><button class="dbb" data-a="f2c">风扇2 关</button><button class="dbb" data-a="ht">加热测试</button><button class="dbb" data-a="hc">加热关</button><button class="dbb" data-a="di">&#x1F50D; 诊断</button></div></div></div></div></div></div>
-<div class="cg"><div class="cx"><div class="cxh"><span class="dd" style="background:#f43f5e"></span>温度</div><div id="cht" class="cxb"></div></div><div class="cx"><div class="cxh"><span class="dd" style="background:#3b82f6"></span>湿度</div><div id="chh" class="cxb"></div></div></div>
-</div><div id="ts"></div>
+<body>
+<div class="card">
+<h1>AMS烘干机 - 自定义控制面板</h1>
+<p>如果看到这个页面，说明 handler 拦截成功！</p>
+<div id="chart"></div>
+</div>
 <script>
-(function(){'use strict';
-var API='';var ENT={f1:'ams-heater-c3-fan1',f2:'ams-heater-c3-fan2',r:'ams-heater-c3-heater-relay',c:'ams-heater-c3-thermostat'};
-var S={},M={t:[],v:[]},H={t:[],v:[]},T={},RI=5000,RT=null;
-var TP={PLA:50,PETG:65,ABS:80,TPU:50,Nylon:80};
-function $(i){return document.getElementById(i)}
-function p(n){return n<10?'0'+n:''+n}
-function ft(d){return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())}
-function ts(m,t){var c=$('ts'),e=document.createElement('div');e.className='ti '+(t||'b');e.textContent=m;c.appendChild(e);setTimeout(function(){e.style.opacity='0';e.style.transition='opacity .3s';setTimeout(function(){e.remove()},300)},2500)}
-async function ef(p){var r=await fetch(API+p,{signal:AbortSignal.timeout(5000)});if(!r.ok)throw Error('HTTP '+r.status);return(r.headers.get('content-type')||'').indexOf('json')!==-1?r.json():r.text()}
-async function ep(p,b){var o={method:'POST',signal:AbortSignal.timeout(5000)};if(b){o.headers={'Content-Type':'application/json'};o.body=JSON.stringify(b)}var r=await fetch(API+p,o);if(!r.ok)throw Error('HTTP '+r.status);return r.text()}
-async function refresh(){var cs=$('cs'),ct=$('ct');try{cs.className='st bz';ct.textContent='...';var d=await ef('/sensor');if(!Array.isArray(d))return;
-var m={};d.forEach(function(s){m[s.id]=s});var t=m[S.t],h=m[S.h],p=m[S.p];
-if(t&&$('st')){var v=parseFloat(t.state)||0;$('st').innerHTML=v.toFixed(1)+'<span class="u">&#xB0;C</span>'}
-if(h&&$('sh')){var v=parseFloat(h.state)||0;$('sh').innerHTML=v.toFixed(1)+'<span class="u">%</span>'}
-if(p&&$('sp')){var v=parseFloat(p.state)||0;$('sp').innerHTML=v.toFixed(0)+'<span class="u">%</span>'}
-var n=new Date(),ts=ft(n);if(t){var v=parseFloat(t.state)||0;M.t.push(ts);M.v.push(v);if(M.t.length>180){M.t.shift();M.v.shift()}}
-if(h){var v=parseFloat(h.state)||0;H.t.push(ts);H.v.push(v);if(H.t.length>180){H.t.shift();H.v.shift()}}
-if(window.tc)tc.setOption({xAxis:{data:M.t.slice(-60)},series:[{data:M.v.slice(-60)}]});
-if(window.hc)hc.setOption({xAxis:{data:H.t.slice(-60)},series:[{data:H.v.slice(-60)}]});
-cs.className='st ok';ct.textContent='已连接';$('lu')&&($('lu').textContent=ft(new Date()));
-}catch(e){cs.className='st er';ct.textContent='离线'}}
-async function diag(){try{var d=await ef('/sensor');if(!Array.isArray(d)||!d.length){ts('无传感器','r');return}var nm={};d.forEach(function(s){var id=s.id||'';if(id.indexOf('temp')!==-1)nm.t=id;if(id.indexOf('humid')!==-1)nm.h=id;if(id.indexOf('power')!==-1||id.indexOf('heater_power')!==-1)nm.p=id});Object.assign(S,nm);ts('检测到'+d.length+'个传感器','g')}catch(e){ts('诊断失败: '+e.message,'r')}}
-function sa(ms){if(RT){clearInterval(RT)}RT=setInterval(refresh,ms||RI)}
-$('rf').addEventListener('click',refresh);
-$('cf').addEventListener('change',function(){$('ct').value=TP[this.value]||50});
-$('cr').addEventListener('change',function(){sa(parseInt(this.value))});
-$('bg').addEventListener('click',async function(){var t=parseFloat($('ct').value)||50,d=parseFloat($('cd').value)||0;if(t<30){ts('温度需&#x2265;30','r');return}
-try{await ep('/switch/'+ENT.r+'/turn_on');await ep('/switch/'+ENT.f1+'/turn_on');await ep('/switch/'+ENT.f2+'/turn_on');await ep('/climate/'+ENT.c+'/control',{target_temperature:t});await ep('/climate/'+ENT.c+'/control',{mode:'heat'});ts('&#x2705; 已启动 '+t+'&#xB0;C','g')}catch(e){ts('&#x274C; '+e.message,'r')}});
-$('bs').addEventListener('click',async function(){try{await ep('/climate/'+ENT.c+'/control',{mode:'off'});await ep('/switch/'+ENT.r+'/turn_off');await ep('/switch/'+ENT.f1+'/turn_off');await ep('/switch/'+ENT.f2+'/turn_off');ts('&#x2705; 已停止','g')}catch(e){ts('&#x274C; '+e.message,'r')}});
-$('be').addEventListener('click',async function(){try{await ep('/climate/'+ENT.c+'/control',{mode:'off'});await ep('/switch/'+ENT.r+'/turn_off');await ep('/switch/'+ENT.f1+'/turn_off');await ep('/switch/'+ENT.f2+'/turn_off');ts('&#x1F6D1; 已紧急停止','r')}catch(e){ts('&#x274C; '+e.message,'r')}});
-document.querySelectorAll('.dbb').forEach(function(b){b.addEventListener('click',async function(){var a=this.getAttribute('data-a');
-try{switch(a){case'f1o':await ep('/switch/'+ENT.f1+'/turn_on');ts('风扇1 开','g');break;case'f1c':await ep('/switch/'+ENT.f1+'/turn_off');ts('风扇1 关','g');break;case'f2o':await ep('/switch/'+ENT.f2+'/turn_on');ts('风扇2 开','g');break;case'f2c':await ep('/switch/'+ENT.f2+'/turn_off');ts('风扇2 关','g');break;case'ht':await ep('/switch/'+ENT.r+'/turn_on');try{await ep('/climate/'+ENT.c+'/control',{mode:'off'})}catch(e){}ts('加热测试','b');break;case'hc':await ep('/switch/'+ENT.r+'/turn_off');ts('加热关','g');break;case'di':await diag();break}}catch(e){ts('失败: '+e.message,'r')};refresh()})});
-$('dtg').addEventListener('click',function(){var d=$('dgc'),h=d.style.display==='none';d.style.display=h?'flex':'none';this.textContent=h?'&#x25B2; 收起':'&#x25BC; 高级'});
-setTimeout(function(){diag();sa(5000);ts('&#x1F7E2; 已连接','g')},500);
-if(window.echarts){var td=$('cht'),hd=$('chh');
-if(td){window.tc=echarts.init(td,null,{renderer:'svg'});tc.setOption({tooltip:{trigger:'axis'},grid:{left:'8%',right:'4%',top:'8%',bottom:'12%'},xAxis:{type:'category',data:[],axisLabel:{color:'#8e90a6',fontSize:9}},yAxis:{type:'value',name:'&#xB0;C',nameTextStyle:{color:'#8e90a6',fontSize:10},axisLabel:{color:'#8e90a6',fontSize:9},splitLine:{lineStyle:{color:'#f0f2f5'}}},series:[{type:'line',smooth:true,symbol:'none',lineStyle:{color:'#f43f5e',width:2},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(244,63,94,.12)'},{offset:1,color:'rgba(244,63,94,.02)'}]}},data:[]}]});window.addEventListener('resize',function(){tc.resize()})}
-if(hd){window.hc=echarts.init(hd,null,{renderer:'svg'});hc.setOption({tooltip:{trigger:'axis'},grid:{left:'8%',right:'4%',top:'8%',bottom:'12%'},xAxis:{type:'category',data:[],axisLabel:{color:'#8e90a6',fontSize:9}},yAxis:{type:'value',name:'%',nameTextStyle:{color:'#8e90a6',fontSize:10},axisLabel:{color:'#8e90a6',fontSize:9},splitLine:{lineStyle:{color:'#f0f2f5'}}},series:[{type:'line',smooth:true,symbol:'none',lineStyle:{color:'#3b82f6',width:2},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(59,130,246,.12)'},{offset:1,color:'rgba(59,130,246,.02)'}]}},data:[]}]});window.addEventListener('resize',function(){hc.resize()})}}
+(function(){
+var chart=echarts.init(document.getElementById('chart'));
+chart.setOption({
+  title:{text:'温度曲线',left:'center'},
+  xAxis:{type:'category',data:['10:00','10:05','10:10','10:15','10:20']},
+  yAxis:{type:'value',name:'°C'},
+  series:[{type:'line',smooth:true,data:[25,28,32,35,38],lineStyle:{color:'#f43f5e'}}]
+});
 })();
 </script>
 </body>
@@ -143,238 +53,51 @@ if(hd){window.hc=echarts.init(hd,null,{renderer:'svg'});hc.setOption({tooltip:{t
 class CustomWebUI : public AsyncWebHandler, public Component {
  public:
   explicit CustomWebUI(web_server_base::WebServerBase *base) : base_(base) {
-    ESP_LOGI(TAG, "CustomWebUI constructor called, base=%p", base);
+    ESP_LOGI(TAG, "Constructor: base=%p", base);
   }
 
-  // --- AsyncWebHandler interface ---
   bool canHandle(AsyncWebServerRequest *request) const override {
-    if (request->method() != HTTP_GET) {
-      return false;
-    }
+    if (request->method() != HTTP_GET) return false;
 #ifdef USE_ESP32
     char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
     request->url_to(url_buf);
-    bool match = (strcmp(url_buf, "/") == 0) || (strcmp(url_buf, "/index.html") == 0) || (strcmp(url_buf, "/echarts.min.js") == 0);
+    bool match = (strcmp(url_buf, "/") == 0);
     ESP_LOGD(TAG, "canHandle: url='%s' match=%s", url_buf, match ? "YES" : "NO");
     return match;
 #else
-    auto url = request->url();
-    bool match = (url == ESPHOME_F("/")) || (url == ESPHOME_F("/index.html")) || (url == ESPHOME_F("/echarts.min.js"));
-    return match;
+    return request->url() == ESPHOME_F("/");
 #endif
   }
 
   void handleRequest(AsyncWebServerRequest *request) override {
-#ifdef USE_ESP32
-    char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
-    request->url_to(url_buf);
-#else
-    auto url = request->url();
-#endif
-    ESP_LOGI(TAG, "handleRequest: url='%s'", url_buf);
-
-    if (strcmp(url_buf, "/") == 0 || strcmp(url_buf, "/index.html") == 0) {
-      ESP_LOGI(TAG, "Serving dashboard HTML (%d bytes)", (int)strlen_P(INDEX_HTML));
-      size_t len = strlen_P(INDEX_HTML);
-      auto *resp = request->beginResponse(200, "text/html; charset=utf-8",
-                                            (const uint8_t *)INDEX_HTML, len);
-      request->send(resp);
-      return;
-    }
-
-    if (strcmp(url_buf, "/echarts.min.js") == 0) {
-      this->serve_echarts_(request);
-      return;
-    }
+    ESP_LOGI(TAG, "handleRequest: serving HTML");
+    size_t len = strlen_P(INDEX_HTML);
+    auto *resp = request->beginResponse(200, "text/html; charset=utf-8",
+                                          (const uint8_t *)INDEX_HTML, len);
+    request->send(resp);
   }
 
-  // --- Component interface ---
   void setup() override {
-    ESP_LOGI(TAG, "CustomWebUI setup() START, priority=%.1f", this->get_setup_priority());
-    ESP_LOGI(TAG, "CustomWebUI base_=%p", this->base_);
-
-    // 1. Mount SPIFFS and ensure echarts.min.js exists
-    this->init_spiffs_();
-
-    // 2. Register our handler with the existing web_server
+    ESP_LOGI(TAG, "setup() START, priority=%.1f", this->get_setup_priority());
     if (this->base_ == nullptr) {
-      ESP_LOGE(TAG, "base_ is null! Cannot register handler.");
+      ESP_LOGE(TAG, "base_ is NULL!");
       return;
     }
-
-    // 3. Initialize base server and register handler
-    ESP_LOGI(TAG, "Calling base_->init()...");
     this->base_->init();
-    ESP_LOGI(TAG, "Calling base_->add_handler_without_auth()...");
     this->base_->add_handler_without_auth(this);
-
-    ESP_LOGI(TAG, "CustomWebUI setup() DONE - handler registered");
+    ESP_LOGI(TAG, "setup() DONE");
   }
 
   float get_setup_priority() const override {
-    // Must be numerically smaller than web_server's priority (WIFI - 1.0f = 199)
-    // so that our setup() runs first and our handler is registered before
-    // web_server's handler. stable_sort keeps registration order for equal
-    // priorities, and web_server's to_code priority is higher, so we must
-    // use a strictly smaller value to guarantee going first.
     return setup_priority::WIFI - 2.0f;
   }
 
   void dump_config() override {
-    ESP_LOGCONFIG(TAG, "Custom Web UI:");
-    ESP_LOGCONFIG(TAG, "  SPIFFS: %s", this->spiffs_mounted_ ? "mounted" : "FAILED");
-    ESP_LOGCONFIG(TAG, "  base_: %p", this->base_);
+    ESP_LOGCONFIG(TAG, "Custom Web UI (TEST VERSION)");
   }
 
  protected:
   web_server_base::WebServerBase *base_{nullptr};
-  bool spiffs_mounted_{false};
-
-  // --- Serve echarts.min.js from SPIFFS ---
-  void serve_echarts_(AsyncWebServerRequest *request) {
-    FILE *f = fopen("/spiffs/echarts.min.js", "rb");
-    if (!f) {
-      ESP_LOGW(TAG, "echarts.min.js not found in SPIFFS");
-      request->send(404, "text/plain",
-                    "echarts.min.js not found - will download on next boot");
-      return;
-    }
-
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    ESP_LOGD(TAG, "Serving echarts.min.js from SPIFFS (%ld bytes)", size);
-
-    std::vector<uint8_t> data(size);
-    size_t read_bytes = fread(data.data(), 1, size, f);
-    fclose(f);
-
-    if (read_bytes != (size_t)size) {
-      ESP_LOGE(TAG, "Failed to read echarts.min.js from SPIFFS");
-      request->send(500, "text/plain", "Failed to read file");
-      return;
-    }
-
-    auto *resp = request->beginResponse(200, "application/javascript; charset=utf-8",
-                                          data.data(), data.size());
-    request->send(resp);
-  }
-
-  // --- Mount SPIFFS (ESP-IDF native API) ---
-  void init_spiffs_() {
-    ESP_LOGI(TAG, "init_spiffs_() START");
-
-    esp_vfs_spiffs_conf_t conf = {
-        .base_path = "/spiffs",
-        .partition_label = nullptr,
-        .max_files = 1,
-        .format_if_mount_failed = true,
-    };
-
-    esp_err_t ret = esp_vfs_spiffs_register(&conf);
-
-    if (ret != ESP_OK) {
-      if (ret == ESP_FAIL) {
-        ESP_LOGE(TAG, "SPIFFS: Failed to mount or format filesystem");
-      } else if (ret == ESP_ERR_NOT_FOUND) {
-        ESP_LOGE(TAG, "SPIFFS: No SPIFFS partition found in partition table");
-        ESP_LOGE(TAG, "SPIFFS: Make sure partitions.csv includes a 'spiffs' partition");
-      } else {
-        ESP_LOGE(TAG, "SPIFFS: Failed to initialize (%s)", esp_err_to_name(ret));
-      }
-      return;
-    }
-
-    this->spiffs_mounted_ = true;
-
-    size_t total = 0, used = 0;
-    esp_spiffs_info(nullptr, &total, &used);
-    ESP_LOGI(TAG, "SPIFFS: mounted. Total=%d, Used=%d, Free=%d", total, used, total - used);
-
-    struct stat st;
-    if (stat("/spiffs/echarts.min.js", &st) == 0 && st.st_size > 0) {
-      ESP_LOGI(TAG, "SPIFFS: echarts.min.js found (%ld bytes)", (long)st.st_size);
-      return;
-    }
-
-    ESP_LOGI(TAG, "SPIFFS: echarts.min.js not found, downloading from CDN...");
-    this->download_echarts_();
-  }
-
-  // --- Download echarts.min.js from CDN (ESP-IDF native HTTP client) ---
-  void download_echarts_() {
-    ESP_LOGI(TAG, "Downloading echarts.min.js from: %s", ECHARTS_CDN_URL);
-
-    esp_http_client_config_t config = {
-        .url = ECHARTS_CDN_URL,
-        .method = HTTP_METHOD_GET,
-        .timeout_ms = 15000,
-        .buffer_size = 1024,
-        .buffer_size_tx = 512,
-    };
-
-    esp_http_client_handle_t client = esp_http_client_init(&config);
-    if (!client) {
-      ESP_LOGE(TAG, "Failed to create HTTP client");
-      return;
-    }
-
-    FILE *f = fopen("/spiffs/echarts.min.js", "wb");
-    if (!f) {
-      ESP_LOGE(TAG, "Failed to create echarts.min.js in SPIFFS");
-      esp_http_client_cleanup(client);
-      return;
-    }
-
-    esp_err_t err = esp_http_client_open(client, 0);
-    if (err != ESP_OK) {
-      ESP_LOGE(TAG, "HTTP open failed: %s", esp_err_to_name(err));
-      fclose(f);
-      esp_http_client_cleanup(client);
-      return;
-    }
-
-    int status_code = esp_http_client_get_status_code(client);
-    if (status_code != 200) {
-      ESP_LOGE(TAG, "HTTP download failed: status %d", status_code);
-      fclose(f);
-      esp_http_client_close(client);
-      esp_http_client_cleanup(client);
-      remove("/spiffs/echarts.min.js");
-      return;
-    }
-
-    int content_len = esp_http_client_fetch_headers(client);
-    ESP_LOGI(TAG, "Downloading echarts.min.js (%d bytes)...", content_len);
-
-    uint8_t buf[512];
-    int total_written = 0;
-    int bytes_read;
-    unsigned long t0 = millis();
-
-    while ((bytes_read = esp_http_client_read(client, (char *)buf, sizeof(buf))) > 0) {
-      int written = (int)fwrite(buf, 1, bytes_read, f);
-      if (written != bytes_read) {
-        ESP_LOGE(TAG, "SPIFFS write error at offset %d", total_written);
-        break;
-      }
-      total_written += bytes_read;
-    }
-
-    unsigned long elapsed = millis() - t0;
-    fclose(f);
-    esp_http_client_close(client);
-    esp_http_client_cleanup(client);
-
-    if (total_written > 0) {
-      ESP_LOGI(TAG, "Downloaded %d bytes in %lu ms (%.1f KB/s)",
-               total_written, elapsed, total_written / (float)elapsed);
-    } else {
-      ESP_LOGE(TAG, "Download failed: 0 bytes written");
-      remove("/spiffs/echarts.min.js");
-    }
-  }
 };
 
 }  // namespace custom_web_ui
