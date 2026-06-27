@@ -196,7 +196,12 @@ class CustomWebUI : public AsyncWebHandler, public Component {
   }
 
   float get_setup_priority() const override {
-    return setup_priority::WIFI - 1.0f;
+    // Must be numerically smaller than web_server's priority (WIFI - 1.0f)
+    // so that our setup() runs first and our handler is registered before
+    // web_server's handler. stable_sort keeps registration order for equal
+    // priorities, and web_server's to_code priority is higher, so we must
+    // use a strictly smaller value to guarantee going first.
+    return setup_priority::WIFI - 2.0f;
   }
 
   void dump_config() override {
