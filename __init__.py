@@ -22,8 +22,8 @@ from esphome.const import CONF_ID
 from esphome.components import web_server_base
 from esphome.components.web_server_base import CONF_WEB_SERVER_BASE_ID
 
-DEPENDENCIES = ["web_server"]
-AUTO_LOAD = []
+DEPENDENCIES = ["network"]
+AUTO_LOAD = ["web_server_base"]
 
 custom_web_ui_ns = cg.esphome_ns.namespace("custom_web_ui")
 CustomWebUI = custom_web_ui_ns.class_("CustomWebUI", cg.Component)
