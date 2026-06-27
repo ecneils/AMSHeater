@@ -153,9 +153,9 @@ class CustomWebUI : public AsyncWebHandler, public Component {
     }
 #ifdef USE_ESP32
     char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
-    auto url = request->url_to(url_buf);
-    bool match = (url == "/") || (url == "/index.html") || (url == "/echarts.min.js");
-    ESP_LOGD(TAG, "canHandle: url='%s' match=%s", url.to_string().c_str(), match ? "YES" : "NO");
+    request->url_to(url_buf);
+    bool match = (strcmp(url_buf, "/") == 0) || (strcmp(url_buf, "/index.html") == 0) || (strcmp(url_buf, "/echarts.min.js") == 0);
+    ESP_LOGD(TAG, "canHandle: url='%s' match=%s", url_buf, match ? "YES" : "NO");
     return match;
 #else
     auto url = request->url();
@@ -167,13 +167,13 @@ class CustomWebUI : public AsyncWebHandler, public Component {
   void handleRequest(AsyncWebServerRequest *request) override {
 #ifdef USE_ESP32
     char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
-    auto url = request->url_to(url_buf);
+    request->url_to(url_buf);
 #else
     auto url = request->url();
 #endif
-    ESP_LOGI(TAG, "handleRequest: url='%s'", url.to_string().c_str());
+    ESP_LOGI(TAG, "handleRequest: url='%s'", url_buf);
 
-    if (url == "/" || url == "/index.html") {
+    if (strcmp(url_buf, "/") == 0 || strcmp(url_buf, "/index.html") == 0) {
       ESP_LOGI(TAG, "Serving dashboard HTML (%d bytes)", (int)strlen_P(INDEX_HTML));
       size_t len = strlen_P(INDEX_HTML);
       auto *resp = request->beginResponse(200, "text/html; charset=utf-8",
@@ -182,7 +182,7 @@ class CustomWebUI : public AsyncWebHandler, public Component {
       return;
     }
 
-    if (url == "/echarts.min.js") {
+    if (strcmp(url_buf, "/echarts.min.js") == 0) {
       this->serve_echarts_(request);
       return;
     }
